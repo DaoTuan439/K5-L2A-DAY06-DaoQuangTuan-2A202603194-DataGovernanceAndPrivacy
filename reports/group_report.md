@@ -140,6 +140,26 @@ python -m src.evaluate --track t08 --pred out/poc/actions.csv --run-name poc --o
 - Lệnh contract `python -m src.main --input fixtures/t08_deletion --config configs/lab.yaml --output out/contract --offline --seed 42` → exit 0.
 - Máy: Windows 11 (10.0.26300), Intel64 Family 6 Model 165, Python 3.13.5 · git sha: xem tag `demo-180m`.
 
+## 08b · Phân tích: legal hold vs quyền xóa · so sánh California DROP
+
+> Tình huống học tập, không phải tư vấn pháp lý. Mục đánh dấu ⚑ cần đối chiếu văn bản gốc trước khi dùng.
+
+**Legal hold vs quyền xóa (DR-002 / subj_03, DR-005 / subj_07).**
+- Quyền xóa không tuyệt đối. GDPR Art.17(3) loại trừ trường hợp việc lưu giữ là cần thiết để tuân thủ **nghĩa vụ pháp lý** (điểm b) hoặc để **xác lập, thực hiện, bảo vệ yêu cầu pháp lý** (điểm e). Một legal hold (LH-2026-03, LH-2026-07) thuộc nhóm này. Luật 91/2025/QH15 cũng có các trường hợp ngoại lệ đối với quyền xóa ⚑ (đối chiếu số điều; NĐ 356/2025 hướng dẫn thi hành ⚑).
+- **Ngoại lệ chỉ áp cho đúng phần dữ liệu cần giữ, không cho cả yêu cầu.** Vì vậy PoC vẫn xóa 12 artefact dẫn xuất của subj_03 và chỉ giữ raw + backup (`hold_scope=copies`). Đây là điểm pháp lý nhạy nhất (§06 failure 2): nếu lệnh hold bao cả dữ liệu dẫn xuất thì xóa chúng là hủy bằng chứng.
+- **Giữ không có nghĩa là dùng tiếp.** Dữ liệu giữ vì hold nên bị **hạn chế xử lý** (tinh thần GDPR Art.18: chỉ lưu trữ, chỉ dùng cho yêu cầu pháp lý). PoC mới ghi `retain_legal_hold`, chưa khóa quyền truy cập: đây là gap.
+- **Phải trả lời người yêu cầu và hẹn xóa.** GDPR Art.12(3): phản hồi trong 1 tháng, gia hạn thêm tối đa 2 tháng nếu phức tạp. PoC gửi thông báo trạng thái cho subject (`notifications.jsonl`) ghi rõ số artefact giữ theo nghĩa vụ pháp lý và "sẽ xóa khi hết hold". Mỗi dòng giữ có `reason_code` + hold id làm căn cứ. Chưa có job tự xóa khi hold được giải phóng.
+- **Bên nhận dữ liệu cũng phải biết.** GDPR Art.19 yêu cầu thông báo việc xóa cho các bên đã nhận dữ liệu. Tương ứng trong PoC: backup a0156 thuộc ACL vendor-x → escalate + tin `acl-owner` yêu cầu vendor-x xóa và gửi bằng chứng; training export → ticket re-export.
+
+**So sánh California DROP** (Delete Request and Opt-out Platform, theo Delete Act SB 362, do CPPA vận hành ⚑ mốc thời gian áp dụng):
+
+| Khía cạnh | California DROP | PoC T08 |
+|---|---|---|
+| Phạm vi lan truyền | **Giữa các tổ chức:** một yêu cầu của người dân gửi tới mọi data broker đã đăng ký | **Trong một tổ chức:** một yêu cầu lan theo lineage tới mọi bản sao (raw → frame → crop → embedding, backup, export) |
+| Cơ chế | Broker định kỳ kiểm tra danh sách yêu cầu và tự xử lý ⚑ chu kỳ | BFS trên data graph + luật ưu tiên, chạy lại idempotent |
+| Bên thứ ba | Chính là đối tượng nhận yêu cầu | Chỉ thông báo (vendor-x, export); chưa có kênh nhận bằng chứng xóa từ bên ngoài |
+| Bài học áp dụng | Một "điểm vào" duy nhất cho người dân, không bắt họ tự tìm từng nơi giữ dữ liệu | Nên mở rộng: xuất danh sách bên nhận (Art.19) và theo dõi xác nhận xóa của họ như một phần SLA |
+
 ## 09 · Limitations & ethics
 
 - **Dev gold không độc lập với policy:** nhãn được soạn từ cùng spec `T08.md` (có hỗ trợ của trợ lý AI, labeller daoquangtuan duyệt), 1 labeller, N=33. Kết quả 1.000 chỉ chứng minh code cài đúng cách hiểu spec. Điểm thật phụ thuộc hidden eval.
@@ -164,6 +184,8 @@ python -m src.evaluate --track t08 --pred out/poc/actions.csv --run-name poc --o
 | https://eur-lex.europa.eu/eli/reg/2016/679/oj (GDPR, Art.17) | ____ | Quyền xóa và ngoại lệ Art.17(3), cơ sở cho nhãn retain khi có nghĩa vụ pháp lý / legal claims |
 | https://thuvienphapluat.vn/van-ban/Bo-may-hanh-chinh/Luat-Bao-ve-du-lieu-ca-nhan-2025-so-91-2025-QH15-625628.aspx (Luật 91/2025/QH15) | ____ | Quyền xóa dữ liệu cá nhân và các trường hợp ngoại lệ ở VN |
 | Nghị định 356/2025 (Research Shelf trong handout) | ____ | Hướng dẫn thi hành luật BVDLCN |
+| https://sites.research.google/datacardsplaybook/ (Data Cards Playbook) | ____ | Khung tài liệu hóa dataset (nguồn gốc, lineage, giới hạn); gợi ý ghi provenance và retention cho từng artefact |
+| California Delete Act (SB 362) / DROP của CPPA (Research Shelf trong handout) | ____ | Một yêu cầu xóa lan tới mọi data broker đã đăng ký; dùng để so sánh ở §08b |
 
 ---
 
