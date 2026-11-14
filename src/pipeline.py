@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -138,8 +139,31 @@ def _tombstone(artefact_id: str, request_id: str) -> str:
     return hashlib.sha256(f"{artefact_id}{ID_SEP}{request_id}".encode()).hexdigest()[:16]
 
 
+def _save_store(path: Path, store: dict) -> None:
+    """Atomic write (tmp + replace): an interruption never leaves a half-written store."""
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(store, indent=1, sort_keys=True), encoding="utf-8")
+    for attempt in range(20):           # Windows: AV / IDE file watchers can briefly lock the target
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
+def _delete_one(store: dict, artefact_id: str, request_id: str) -> None:
+    """The mock 'storage API' call. Tests monkeypatch it to simulate a crash mid-job."""
+    store["tombstones"][artefact_id] = {"request_id": request_id, "tombstone": _tombstone(artefact_id, request_id)}
+
+
 def mock_delete(ctx: RunContext, final: pd.DataFrame) -> pd.DataFrame:
-    """Simulated deletion against out/<run>/mock_store.json. Idempotent: a re-run finds the tombstones."""
+    """Simulated deletion against out/<run>/mock_store.json.
+
+    Idempotent and resumable: the store is checkpointed after EVERY deletion, so if the job is interrupted
+    the next run finds the tombstones already written, skips them (`already_deleted`) and finishes the rest.
+    """
     store_path = ctx.output_dir / "mock_store.json"
     store = json.loads(store_path.read_text(encoding="utf-8")) if store_path.exists() else {"tombstones": {}}
     rows = []
@@ -147,16 +171,103 @@ def mock_delete(ctx: RunContext, final: pd.DataFrame) -> pd.DataFrame:
         if r.artefact_id in store["tombstones"]:
             status = "already_deleted"
         else:
-            store["tombstones"][r.artefact_id] = {"request_id": r.request_id, "tombstone": _tombstone(r.artefact_id, r.request_id)}
+            _delete_one(store, r.artefact_id, r.request_id)
+            _save_store(store_path, store)                     # checkpoint before logging success
             status = "deleted"
             ctx.audit.log(actor="pipeline", action="mock_delete", item_id=r.artefact_id, before="present", after="tombstoned",
                           reason=r.reason_code, request_id=r.request_id)
         rows.append({"request_id": r.request_id, "artefact_id": r.artefact_id, "status": status,
                      "tombstone": store["tombstones"][r.artefact_id]["tombstone"]})
-    store_path.write_text(json.dumps(store, indent=1, sort_keys=True), encoding="utf-8")
+    _save_store(store_path, store)
     ev = pd.DataFrame(rows, columns=["request_id", "artefact_id", "status", "tombstone"])
     ev.to_csv(ctx.out("deletion_evidence.csv"), index=False)
     return ev
+
+
+# ---------------------------------------------------------------- SLA + notification stub (+24h milestone)
+RECIPIENT_BY_REASON = {   # who must act on an open exception
+    "LEGAL_HOLD": "legal", "LEGAL_HOLD_INHERITED": "legal", "IDENTITY_NOT_VERIFIED": "privacy-ops",
+    "NO_PERMISSION": "acl-owner", "ORIGIN_UNKNOWN": "data-owner", "MULTI_SUBJECT": "redaction-team",
+    "LINEAGE_TAG_CONFLICT": "data-owner", "UNTAGGED_DERIVED": "data-owner",
+}
+
+
+def _base_reason(code: str) -> str:
+    return code.split(":", 1)[1] if code.startswith("REVIEWER_OVERRIDE:") else code
+
+
+def sla_report(ctx: RunContext, final: pd.DataFrame, requests: list[dict]) -> pd.DataFrame:
+    """Per-request SLA view. `as_of` is a frozen param (deterministic); fallback = latest received_at."""
+    req = pd.DataFrame(requests)
+    as_of = pd.Timestamp(ctx.param("as_of") or req.received_at.max())
+    at_risk_days = float(ctx.param("sla_at_risk_days", 7))
+    counts = final.pivot_table(index="request_id", columns="action", values="artefact_id", aggfunc="count", fill_value=0)
+    counts = counts.reindex(columns=list(ACTIONS), fill_value=0)
+    rows = []
+    for r in req.sort_values("request_id").itertuples(index=False):
+        c = counts.loc[r.request_id] if r.request_id in counts.index else pd.Series(0, index=list(ACTIONS))
+        days_left = round((pd.Timestamp(r.deadline) - as_of).total_seconds() / 86400, 1)
+        open_esc = int(c["escalate"])
+        if open_esc and days_left < 0:
+            sla = "OVERDUE"
+        elif open_esc and days_left <= at_risk_days:
+            sla = "AT_RISK"
+        else:
+            sla = "ON_TRACK"
+        rows.append({"request_id": r.request_id, "subject_id": r.subject_id, "received_at": r.received_at,
+                     "deadline": r.deadline, "as_of": as_of.isoformat(), "days_left": days_left,
+                     "deleted": int(c["delete"]), "retained_legal_hold": int(c["retain_legal_hold"]),
+                     "open_escalations": open_esc,
+                     "request_status": "PARTIAL" if open_esc else ("CLOSED_WITH_HOLD" if c["retain_legal_hold"] else "CLOSED"),
+                     "sla_status": sla})
+    sla_df = pd.DataFrame(rows)
+    sla_df.to_csv(ctx.out("sla_report.csv"), index=False)
+    _sla_dashboard(sla_df, ctx.out("sla_dashboard.html"))
+    ctx.stats["sla"] = sla_df.sla_status.value_counts().to_dict()
+    return sla_df
+
+
+def _sla_dashboard(sla_df: pd.DataFrame, path: Path) -> None:
+    """Offline one-file dashboard (no JS, no network)."""
+    colors = {"ON_TRACK": "#CFE6D3", "AT_RISK": "#F6E2B3", "OVERDUE": "#F3C9C0"}
+    body = "".join(
+        "<tr>" + "".join(f"<td>{v}</td>" for v in r[:-1]) +
+        f"<td style='background:{colors.get(r[-1], '#eee')}'><b>{r[-1]}</b></td></tr>"
+        for r in sla_df.astype(str).values.tolist())
+    head = "".join(f"<th>{c}</th>" for c in sla_df.columns)
+    summary = " · ".join(f"{k}: {v}" for k, v in sla_df.sla_status.value_counts().items())
+    path.write_text(
+        "<!doctype html><meta charset='utf-8'><title>T08 SLA dashboard</title>"
+        "<style>body{font-family:system-ui,Arial,sans-serif;margin:24px;background:#F6F5F1;color:#1B2333}"
+        "table{border-collapse:collapse;font-size:14px}td,th{border:1px solid #D3D0C6;padding:6px 10px}"
+        "th{background:#14213D;color:#F6F5F1}</style>"
+        f"<h1>Delete requests: SLA</h1><p>{summary} · as_of {sla_df.as_of.iloc[0] if len(sla_df) else ''}</p>"
+        f"<table><tr>{head}</tr>{body}</table>", encoding="utf-8")
+
+
+def notify(ctx: RunContext, final: pd.DataFrame, sla_df: pd.DataFrame) -> pd.DataFrame:
+    """Notification STUB: writes a mock outbox (notifications.jsonl). Nothing is sent anywhere."""
+    msgs = []
+    sla_by_req = sla_df.set_index("request_id")
+    for rid, g in final.groupby("request_id", sort=True):
+        s = sla_by_req.loc[rid]
+        exc = g[g.action != "delete"]
+        msgs.append({"to": f"subject:{s.subject_id}", "request_id": rid, "kind": "request_status",
+                     "text": f"{int(s.deleted)} artefact đã xóa; {int(s.retained_legal_hold)} giữ theo nghĩa vụ pháp lý "
+                             f"(sẽ xóa khi hết hold); {int(s.open_escalations)} đang xử lý, hạn {s.deadline}.",
+                     "sla_status": s.sla_status})
+        for (recipient, code), eg in exc.assign(reason_base=exc.reason_code.map(_base_reason),
+                                                recipient=lambda d: d.reason_base.map(RECIPIENT_BY_REASON).fillna("privacy-ops")
+                                                ).groupby(["recipient", "reason_base"], sort=True):
+            msgs.append({"to": recipient, "request_id": rid, "kind": f"action_required:{code}",
+                         "artefact_ids": sorted(eg.artefact_id.tolist()),
+                         "text": f"{len(eg)} artefact cần xử lý ({code}) trước {s.deadline}.", "sla_status": s.sla_status})
+    out = ctx.out("notifications.jsonl")
+    with open(out, "w", encoding="utf-8") as f:
+        for m in msgs:
+            f.write(json.dumps(m, ensure_ascii=False) + "\n")
+    ctx.stats["n_notifications"] = len(msgs)
+    return pd.DataFrame(msgs)
 
 
 def decide(ctx: RunContext, final: pd.DataFrame) -> Decision:
@@ -201,6 +312,8 @@ def run(ctx: RunContext) -> None:
     queue = rank(ctx, scored)
     final = review(ctx, scored, queue)
     write_outputs(ctx, final)
+    sla_df = sla_report(ctx, final, data["requests"])
+    notify(ctx, final, sla_df)
     if not bool(ctx.param("dry_run", True)):
         ev = mock_delete(ctx, final)
         ctx.stats["mock_delete"] = ev.status.value_counts().to_dict()

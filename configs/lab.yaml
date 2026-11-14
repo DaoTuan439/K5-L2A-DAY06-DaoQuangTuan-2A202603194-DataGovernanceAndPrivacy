@@ -17,4 +17,6 @@ params:
   dry_run: false                  # false = run the mock deletion + write deletion_evidence.csv
   hold_scope: copies              # legal hold covers the artefact + its exact copies (backup); see metric_contract.md
   operator_role: data-platform    # role executing deletions; artefacts whose ACL lacks it -> escalate
+  as_of: "2026-11-14T09:00:00+07:00"   # frozen "today" for the SLA report (deterministic re-runs)
+  sla_at_risk_days: 7                   # open escalations with <= 7 days left -> AT_RISK
   review_file: reports/review_queue_reviewed.csv   # human decisions (used when out/<run>/review_queue_reviewed.csv is absent)

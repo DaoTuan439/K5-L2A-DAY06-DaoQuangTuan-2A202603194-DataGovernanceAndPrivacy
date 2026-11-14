@@ -128,3 +128,56 @@ def test_ablation_toggle_changes_only_the_disabled_rule():
         "a": ("retain_legal_hold", "LEGAL_HOLD"), "b": ("delete", "SAFE_TO_DELETE")}
     with pytest.raises(ValueError):
         plan_all([_req("s1")], arts, disabled=frozenset({"typo"}))
+
+
+# ---------------------------------------------------------------- +24h milestone: resume + SLA / notifications
+def test_interrupted_mock_delete_resumes_without_double_delete(tmp_path, monkeypatch):
+    import src.pipeline as pl
+    real, calls = pl._delete_one, {"n": 0}
+
+    def flaky(store, aid, rid):
+        calls["n"] += 1
+        if calls["n"] > 40:
+            raise RuntimeError("simulated crash mid-job")
+        real(store, aid, rid)
+
+    monkeypatch.setattr(pl, "_delete_one", flaky)
+    with pytest.raises(RuntimeError):
+        _run(tmp_path)
+    store = json.loads((tmp_path / "mock_store.json").read_text(encoding="utf-8"))
+    assert len(store["tombstones"]) == 40                       # checkpointed up to the crash
+    monkeypatch.setattr(pl, "_delete_one", real)
+    assert _run(tmp_path) == 0                                    # resume
+    ev = pd.read_csv(tmp_path / "deletion_evidence.csv")
+    assert (ev.status == "already_deleted").sum() == 40 and (ev.status == "deleted").sum() == len(ev) - 40
+    log = [json.loads(l) for l in (tmp_path / "audit_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    deletes = [e["item_id"] for e in log if e["action"] == "mock_delete"]
+    assert len(deletes) == len(set(deletes)) == len(ev)          # each artefact deleted exactly once
+
+
+def _ctx(tmp_path, **params):
+    import numpy as np
+    from src.common.context import RunContext
+    from src.common.review import AuditLog
+    return RunContext(track="t08", input_dir=tmp_path, output_dir=tmp_path, config={"params": params}, seed=42,
+                      rng=np.random.default_rng(42), audit=AuditLog(tmp_path / "audit_log.jsonl"))
+
+
+def test_sla_status_and_notification_stub(tmp_path):
+    from src.pipeline import notify, sla_report
+    reqs = [{"request_id": "R1", "subject_id": "s1", "received_at": "2026-11-01T09:00:00+07:00", "deadline": "2026-12-01T09:00:00+07:00"},
+            {"request_id": "R2", "subject_id": "s2", "received_at": "2026-11-01T09:00:00+07:00", "deadline": "2026-11-20T09:00:00+07:00"},
+            {"request_id": "R3", "subject_id": "s3", "received_at": "2026-11-01T09:00:00+07:00", "deadline": "2026-11-10T09:00:00+07:00"}]
+    final = pd.DataFrame([
+        {"request_id": "R1", "artefact_id": "a", "action": "escalate", "reason_code": "MULTI_SUBJECT"},
+        {"request_id": "R2", "artefact_id": "b", "action": "escalate", "reason_code": "NO_PERMISSION"},
+        {"request_id": "R3", "artefact_id": "c", "action": "escalate", "reason_code": "REVIEWER_OVERRIDE:ORIGIN_UNKNOWN"},
+        {"request_id": "R3", "artefact_id": "d", "action": "retain_legal_hold", "reason_code": "LEGAL_HOLD"},
+        {"request_id": "R3", "artefact_id": "e", "action": "delete", "reason_code": "SAFE_TO_DELETE"}])
+    ctx = _ctx(tmp_path, as_of="2026-11-14T09:00:00+07:00", sla_at_risk_days=7)
+    sla = sla_report(ctx, final, reqs).set_index("request_id")
+    assert sla.sla_status.to_dict() == {"R1": "ON_TRACK", "R2": "AT_RISK", "R3": "OVERDUE"}
+    assert sla.loc["R3", "days_left"] == -4.0 and (tmp_path / "sla_dashboard.html").exists()
+    msgs = notify(ctx, final, sla.reset_index())
+    assert set(msgs.to) == {"subject:s1", "subject:s2", "subject:s3", "redaction-team", "acl-owner", "data-owner", "legal"}
+    assert all("http" not in json.dumps(m) for m in msgs.to_dict("records"))   # stub: nothing is sent
