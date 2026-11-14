@@ -26,6 +26,7 @@ from dataclasses import dataclass
 ACTIONS = ("delete", "retain_legal_hold", "escalate")
 COPY_TYPES = frozenset({"backup"})          # exact copies of their parent (same content, same hold)
 HOLD_SCOPES = ("self", "copies", "descendants")
+RULES = ("legal_hold", "identity", "acl", "origin", "multi_subject", "lineage")   # can be disabled for ablation only
 
 # reason_code -> review priority (higher = review first)
 REASON_PRIORITY = {
@@ -112,23 +113,25 @@ def held_ids(artefacts: list[dict], children: dict[str, list[str]], hold_scope: 
     return out
 
 
-def decide_artefact(a: dict, subject: str, found_via: str, request: dict, holds: dict, operator_role: str) -> tuple[str, str, str]:
-    """Return (action, reason_code, human reason) for one (request, artefact)."""
+def decide_artefact(a: dict, subject: str, found_via: str, request: dict, holds: dict, operator_role: str,
+                    disabled: frozenset = frozenset()) -> tuple[str, str, str]:
+    """Return (action, reason_code, human reason) for one (request, artefact). `disabled` is for ablation only."""
     aid = a["artefact_id"]
     subjects = a.get("subject_ids") or []
-    if aid in holds:
+    on = lambda rule: rule not in disabled  # noqa: E731
+    if on("legal_hold") and aid in holds:
         hold_id, code = holds[aid]
         why = "artefact is under legal hold" if code == "LEGAL_HOLD" else "copy of an artefact under legal hold"
         return "retain_legal_hold", code, f"{why} {hold_id}; delete when the hold is released"
-    if not request.get("identity_verified", False):
+    if on("identity") and not request.get("identity_verified", False):
         return "escalate", "IDENTITY_NOT_VERIFIED", "requester identity not verified; do not act before verification"
-    if operator_role not in (a.get("acl") or []):
+    if on("acl") and operator_role not in (a.get("acl") or []):
         return "escalate", "NO_PERMISSION", f"operator role {operator_role!r} not in ACL {a.get('acl')}; owner of the ACL must act"
-    if a.get("origin_known") is False:
+    if on("origin") and a.get("origin_known") is False:
         return "escalate", "ORIGIN_UNKNOWN", "origin unknown; confirm lineage before deleting"
-    if len(subjects) > 1:
+    if on("multi_subject") and len(subjects) > 1:
         return "escalate", "MULTI_SUBJECT", f"contains other subjects {sorted(set(subjects) - {subject})}; redact or re-export instead of deleting"
-    if found_via == "lineage":
+    if on("lineage") and found_via == "lineage":
         if subjects:
             return "escalate", "LINEAGE_TAG_CONFLICT", f"derived from {subject}'s data but tagged {subjects}"
         return "escalate", "UNTAGGED_DERIVED", f"derived from {subject}'s data but has no subject tag"
@@ -136,13 +139,13 @@ def decide_artefact(a: dict, subject: str, found_via: str, request: dict, holds:
 
 
 def plan_request(request: dict, artefacts: list[dict], children: dict[str, list[str]], holds: dict,
-                 operator_role: str = "data-platform") -> list[Plan]:
+                 operator_role: str = "data-platform", disabled: frozenset = frozenset()) -> list[Plan]:
     by_id = {a["artefact_id"]: a for a in artefacts}
     subject = request["subject_id"]
     plans = []
     for aid, via in sorted(resolve_scope(subject, artefacts, children).items()):
         a = by_id[aid]
-        action, code, why = decide_artefact(a, subject, via, request, holds, operator_role)
+        action, code, why = decide_artefact(a, subject, via, request, holds, operator_role, disabled)
         plans.append(Plan(request_id=request["request_id"], subject_id=subject, artefact_id=aid,
                           artefact_type=a.get("type", ""), found_via=via, action=action, reason_code=code, reason=why,
                           legal_hold=str(a.get("legal_hold") or holds.get(aid, ("", ""))[0] or ""),
@@ -151,7 +154,10 @@ def plan_request(request: dict, artefacts: list[dict], children: dict[str, list[
 
 
 def plan_all(requests: list[dict], artefacts: list[dict], hold_scope: str = "copies",
-             operator_role: str = "data-platform") -> list[Plan]:
+             operator_role: str = "data-platform", disabled: frozenset = frozenset()) -> list[Plan]:
+    unknown = set(disabled) - set(RULES)
+    if unknown:
+        raise ValueError(f"unknown rules {sorted(unknown)}; known: {RULES}")
     ids = [a["artefact_id"] for a in artefacts]
     if len(ids) != len(set(ids)):
         raise ValueError("data_graph has duplicate artefact_id values")
@@ -166,5 +172,5 @@ def plan_all(requests: list[dict], artefacts: list[dict], hold_scope: str = "cop
     holds = held_ids(artefacts, children, hold_scope)
     out: list[Plan] = []
     for r in sorted(requests, key=lambda r: r["request_id"]):
-        out.extend(plan_request(r, artefacts, children, holds, operator_role))
+        out.extend(plan_request(r, artefacts, children, holds, operator_role, frozenset(disabled)))
     return out

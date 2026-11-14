@@ -120,3 +120,11 @@ def test_stale_review_file_fails_loudly(tmp_path):
     q.loc[:, ["item_id", "reviewer", "reviewer_decision"]] = ["DR-999|a9999", "tester", "approve"]
     q.to_csv(tmp_path / "review_queue_reviewed.csv", index=False)
     assert _run(tmp_path) == 2                       # input error, explicit exit code
+
+
+def test_ablation_toggle_changes_only_the_disabled_rule():
+    arts = [_art("a", ["s1"], legal_hold="LH-1"), _art("b", ["s1", "s2"])]
+    assert _actions(plan_all([_req("s1")], arts, disabled=frozenset({"multi_subject"}))) == {
+        "a": ("retain_legal_hold", "LEGAL_HOLD"), "b": ("delete", "SAFE_TO_DELETE")}
+    with pytest.raises(ValueError):
+        plan_all([_req("s1")], arts, disabled=frozenset({"typo"}))
