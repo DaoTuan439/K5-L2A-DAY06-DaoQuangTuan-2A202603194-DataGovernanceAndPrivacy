@@ -15,8 +15,8 @@
 | Thành viên + vai trò | 1. daoquangtuan (nhóm 1 người): Lead/Integrator · Data & GT · Core algorithm · QA/metric · Review + report |
 | Git URL | https://github.com/DaoTuan439/K5-L2A-DAY06-DaoQuangTuan-2A202603194-DataGovernanceAndPrivacy |
 | Tag `demo-180m` (commit) | `demo-180m` → commit gắn tag cùng report này (xem `git show demo-180m`) |
-| Tag `final-24h` (commit) | ____ (gắn khi nộp bản cuối) |
-| Deadline (giờ VN) | ____ |
+| Tag `final-24h` (commit) | `final-24h` → commit gắn tag cùng bản report này (xem `git show final-24h`) |
+| Deadline (giờ VN) | 12:00 15/11/2026 |
 
 ## 01 · Problem statement
 
@@ -166,7 +166,7 @@ python -m src.evaluate --track t08 --pred out/poc/actions.csv --run-name poc --o
 
 **Bảng 3 · Checklist chốt khi nộp**
 
-- [x] Link repo trong report; input mẫu không chứa PII thật (fixture synthetic CC0). Tag cuối `final-24h`: chưa gắn.
+- [x] Link repo và tag cuối `final-24h` trong report; input mẫu không chứa PII thật (fixture synthetic CC0). Slide demo: `demo/G08_T08_demo_slides.pdf`.
 - [x] Đúng 1 lệnh run, 1 lệnh evaluate, 1 lệnh tests; không cần download khi chạy.
 - [x] Có baseline/PoC metrics (dev gold), 3 failure case, reviewer evidence, decision log.
 - [x] Có license/source provenance, seed, offline environment, GT/eval N.
