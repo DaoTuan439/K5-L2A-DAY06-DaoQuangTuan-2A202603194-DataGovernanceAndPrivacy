@@ -72,7 +72,7 @@
 | False-delete count (lower, mục tiêu 0) | **1** (xóa raw a0043 đang legal hold) | **0** | −1 |
 | Hard-slice: Exception handling accuracy | 0/10 = 0.000 [0.000, 0.278] | 10/10 = 1.000 [0.722, 1.000] | N=10 dòng hold/escalate |
 | Review queue | 0 dòng (không review) | 32 dòng exception, 32/32 đã duyệt | B = toàn bộ exception |
-| Runtime (CPU, `run_info.json`) | 0.0335 s cho 10 dòng | 0.5008 s cho 158 dòng ≈ 0.32 s / 100 dòng | Intel64 Fam 6 Model 165, Win 11, Python 3.13.5 |
+| Runtime (CPU, `run_info.json`) | 0.0335 s cho 10 dòng | 1.0042 s cho 158 dòng ≈ 0.64 s / 100 dòng (gồm checkpoint sau mỗi lần xóa) | Intel64 Fam 6 Model 165, Win 11, Python 3.13.5 |
 
 > PoC = 1.000 trên dev gold **không** phải bằng chứng mạnh: gold và policy cùng suy ra từ một spec (xem §09). Rủi ro thật ở phạm vi legal hold, đo trong §06.
 
@@ -108,7 +108,8 @@
 - **Failure case 1 (baseline, failure mode bắt buộc "xóa nhầm exception; chỉ xóa raw nhưng giữ bản sao và embedding định danh"):** DR-002 / subj_03. Baseline `delete` a0043 (`raw_video`, `legal_hold: LH-2026-03`), làm mất bằng chứng đang bị giữ. Đồng thời baseline bỏ qua backup a0044 và 3 embedding định danh a0047/a0051/a0055, nên dữ liệu khuôn mặt của subj_03 vẫn tồn tại sau khi "xóa xong". **Root cause:** xóa theo filename, không duyệt lineage, không kiểm `legal_hold` trước khi xóa.
 - **Failure case 2 (PoC, rủi ro còn lại):** phạm vi legal hold không được spec định nghĩa rõ. Với DR-002, PoC giữ a0043 + backup a0044 nhưng **xóa** 12 frame/crop/embedding/annotation dẫn xuất từ raw đang hold. Nếu legal hold LH-2026-03 thực chất bao cả dữ liệu dẫn xuất thì PoC có **12 false-delete** (ablation 1, hàng copies / GT descendants). **Root cause:** policy ngầm định "bằng chứng = bản gốc + bản sao". **Cách giảm:** hold record nên khai báo scope (`self | copies | descendants`) để pipeline đọc thay vì đoán; trước khi có điều đó, hold scope là câu hỏi bắt buộc cho legal.
 - **Failure case 3 (PoC, giới hạn nghiệp vụ):** 24 dòng nhiều subject (vd frame a0011 chứa subj_00 + subj_01 trong DR-001) được escalate. Vì vậy dữ liệu của người yêu cầu **vẫn còn** cho tới khi redact/re-export xong. Metric tính đúng (escalate), nhưng quyền xóa chỉ được thực hiện trọn khi ticket redact đóng trước deadline (2026-12-01 với DR-001).
-- **Latency:** 0.50 s / 158 dòng trên CPU laptop (Intel64 Fam 6 Model 165, Windows 11, Python 3.13.5).
+- **Failure case 4 (lỗi thật gặp khi chạy, đã sửa):** trên Windows, `os.replace` khi checkpoint `mock_store.json` bị `PermissionError` (file trong `out/poc` bị antivirus / IDE file watcher khóa tạm thời), nên job xóa dừng giữa chừng. Vì store được checkpoint sau mỗi lần xóa, trạng thái không hỏng: lần chạy lại hoàn tất, `deletion_evidence.csv` = 16 `already_deleted` + 110 `deleted`, mỗi artefact xóa đúng 1 lần. **Root cause:** ghi đè file trên Windows không atomic khi có tiến trình khác giữ handle. **Sửa:** retry có backoff khi `replace`; test `test_interrupted_mock_delete_resumes_without_double_delete` mô phỏng crash sau 40 lần xóa.
+- **Latency:** 1.00 s / 158 dòng trên CPU laptop (Intel64 Fam 6 Model 165, Windows 11, Python 3.13.5). Phần lớn thời gian là 126 lần checkpoint store, đổi tốc độ lấy khả năng resume.
 
 ## 07 · Human & decision
 
@@ -116,6 +117,8 @@
 - **Quyết định người duyệt:** `reports/review_queue_reviewed.csv`. Reviewer daoquangtuan, 2026-11-14, 32/32 `approve`, mỗi dòng có `review_note`: giữ hold và hẹn xóa khi hết hold; redact/re-export artefact nhiều subject; data owner xác minh lineage embedding; chuyển vendor-x xóa backup a0156 và gửi bằng chứng. Pipeline đọc file qua `params.review_file`, nên clean clone vẫn tái lập.
 - **Override + audit:** `edit`/`reject` + `override_value ∈ {delete, retain_legal_hold, escalate}`; **guard:** artefact legal hold không thể override thành `delete` (ghi `override_blocked`, test `test_reviewer_cannot_override_legal_hold_to_delete`). `out/poc/audit_log.jsonl` (append-only) có: 126 `plan:delete`, 28 `plan:escalate`, 4 `plan:retain_legal_hold`, 32 `review:approve`, 126 `mock_delete`, nghĩa là mọi action đều có audit entry.
 - **Decision:** trước review là `HOLD` / `EXCEPTIONS_PENDING_REVIEW` (28 escalation chưa giải quyết). Sau review là `GO` / `REQUESTS_RESOLVED`, owner "daoquangtuan (Data Protection Lead)", metrics {delete 126, retain 4, escalate 28, unresolved 0} (`out/poc/decision.json`, `reports/decision_log.csv`).
+- **SLA dashboard + notification stub (mốc +24h):** `out/poc/sla_report.csv` + `sla_dashboard.html` (offline). `as_of` chốt trong config là 2026-11-14 09:00 +07, nên chạy lại vẫn ra cùng kết quả. Trạng thái: OVERDUE (quá hạn, còn escalation), AT_RISK (≤ 7 ngày, còn escalation), ON_TRACK. Hiện 10/10 ON_TRACK (17–26 ngày còn lại) nhưng cả 10 là PARTIAL vì còn ticket redact/re-export. `notifications.jsonl` là outbox mock (26 tin, không gửi đi đâu): thông báo trạng thái cho từng subject, và yêu cầu hành động cho legal / acl-owner / data-owner / redaction-team theo reason_code.
+- **Resume sau khi job bị ngắt (mốc +24h):** store được checkpoint atomic sau **mỗi** lần xóa; lần chạy sau bỏ qua tombstone đã có (xem failure case 4).
 - **Khi nào HOLD:** còn escalation chưa duyệt; reviewer chọn `escalate`/`skip`; request chưa xác minh danh tính. GO không có nghĩa là xóa artefact đang hold: chúng được giữ và hẹn xóa khi hold được giải phóng.
 
 ## 08 · Reproduce & tests
@@ -133,7 +136,7 @@ python -m pytest -q
 python -m src.evaluate --track t08 --pred out/poc/actions.csv --run-name poc --out reports/metrics_poc.json
 ```
 
-- `pytest`: **57 passed, 39 skipped** (skip = test cần GT giảng viên); riêng `tests/test_t08.py`: **10 passed**: E2E + idempotency (chạy 2 lần cùng `actions.csv`, lần 2 toàn `already_deleted`), PoC > baseline, legal hold + backup, guard override, identity/ACL/origin/multi-subject, artefact mất tag, graph hỏng (trùng id, parent treo), review file cũ (exit 2), toggle ablation.
+- `pytest`: **59 passed, 39 skipped** (skip = test cần GT giảng viên); riêng `tests/test_t08.py`: **12 passed**: resume sau crash, SLA/notification, E2E + idempotency (chạy 2 lần cùng `actions.csv`, lần 2 toàn `already_deleted`), PoC > baseline, legal hold + backup, guard override, identity/ACL/origin/multi-subject, artefact mất tag, graph hỏng (trùng id, parent treo), review file cũ (exit 2), toggle ablation.
 - Lệnh contract `python -m src.main --input fixtures/t08_deletion --config configs/lab.yaml --output out/contract --offline --seed 42` → exit 0.
 - Máy: Windows 11 (10.0.26300), Intel64 Family 6 Model 165, Python 3.13.5 · git sha: xem tag `demo-180m`.
 
@@ -141,7 +144,7 @@ python -m src.evaluate --track t08 --pred out/poc/actions.csv --run-name poc --o
 
 - **Dev gold không độc lập với policy:** nhãn được soạn từ cùng spec `T08.md` (có hỗ trợ của trợ lý AI, labeller daoquangtuan duyệt), 1 labeller, N=33. Kết quả 1.000 chỉ chứng minh code cài đúng cách hiểu spec. Điểm thật phụ thuộc hidden eval.
 - **Rủi ro pháp lý:** phạm vi legal hold (§06 failure 2) và cách xử lý artefact nhiều subject cần DPO/legal xác nhận. Đây là tình huống học tập, **không** tuyên bố "đạt GDPR Art.17 / Luật 91/2025 / NĐ 356/2025".
-- **Chưa làm:** SLA dashboard / nhắc deadline; resume khi job bị ngắt (mới có idempotency qua tombstone); notification cho vendor-x; lịch xóa tự động khi hold hết hạn; xóa thật trên storage (mock).
+- **Chưa làm:** gửi notification thật (mới là outbox mock); lịch xóa tự động khi hold hết hạn; theo dõi việc đóng ticket redact/re-export; xóa thật trên storage (mock).
 - **Scale 10×** (~2 000 artefact, 100 request): BFS O(V+E) mỗi request, vẫn dưới giây. Hàng chờ review tăng tuyến tính (~320 dòng), nên cần gom theo artefact (training_export a0211 xuất hiện trong 8 request nên duyệt 1 lần).
 - **False alarm:** escalate thừa làm chậm việc đóng request nhưng không gây xóa nhầm. Nhóm chấp nhận trade-off này.
 
