@@ -1,10 +1,11 @@
 # Group Report — Day 06 Data Lab (Field-to-Release PoC)
 
 > Mọi con số dưới đây lấy từ file do script sinh ra: `reports/selfcheck_t08.md`, `reports/ablation_t08.md`,
-> `out/*/run_info.json`, `out/poc/decision.json`. **Điểm chính thức** (`reports/metrics_*.json`,
-> `reports/table1_baseline_vs_poc.md`) chỉ sinh được khi giảng viên cài overlay `gt/`; repo học viên chạy
-> `python -m src.evaluate --track t08 ...` → exit 2 "ground truth file not found" (đã kiểm). Vì vậy bảng 1 dùng
-> **dev gold tự gán nhãn** (N=33), cùng evaluator chính thức `eval_t08`.
+> `out/*/run_info.json`, `out/poc/decision.json`. Repo học viên không có `gt/`: `python -m src.evaluate --track t08 ...`
+> không có `--gt` thì exit 2 "ground truth file not found" (đã kiểm). Vì vậy `reports/metrics_baseline.json`,
+> `reports/metrics_poc.json`, `reports/table1_baseline_vs_poc.md` hiện được sinh bằng **đúng các lệnh của đề** với
+> `--gt reports/gold/t08_dev_gt_actions.csv` (**dev gold tự gán nhãn**, N=33; trường `extra.gt` trong JSON ghi rõ),
+> pred giới hạn ở DR-002/DR-004. **Không phải điểm chính thức.** Giảng viên chạy lại với GT thật sẽ ghi đè 3 file này.
 
 ## 00 · Header
 
