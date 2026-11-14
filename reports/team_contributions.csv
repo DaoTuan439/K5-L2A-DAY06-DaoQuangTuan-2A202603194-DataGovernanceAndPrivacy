@@ -1,6 +1,2 @@
 member,git_author_name,git_email,role,modules_files,commit_shas,evidence_note,presenter
-Member 1,,,Lead / Integrator,src/main.py; configs/,,,
-Member 2,,,Data & fixtures,fixtures/; tools/,,,
-Member 3,,,Core algorithm,src/pipeline.py,,,
-Member 4,,,QA / metric,tests/; reports/metrics_*.json,,,
-Member 5,,,Human review + report,reports/group_report.md; demo/,,,
+daoquangtuan,Dao Tuan,tuan.dao3@sotatek.com,"Lead / Integrator; Data & GT; Core algorithm; QA / metric; Human review + report (1-person group)","src/t08_lineage.py; src/baseline_t08.py; src/pipeline.py; tests/test_t08.py; tools/t08_selfcheck.py; tools/t08_ablation.py; configs/lab.yaml; reports/","e2fbe6d;3aba54b;12f26a5;9b27bc5;86c5330;9cffbe8;10de1f1;6143f99","Solo group G08: all non-starter commits; starter commits by loversky02 / Tin Duong are the instructor template",yes
