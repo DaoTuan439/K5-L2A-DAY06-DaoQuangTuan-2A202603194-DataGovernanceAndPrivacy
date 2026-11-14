@@ -74,6 +74,8 @@
 | Review queue | 0 dòng (không review) | 32 dòng exception, 32/32 đã duyệt | B = toàn bộ exception |
 | Runtime (CPU, `run_info.json`) | 0.0335 s cho 10 dòng | 1.0042 s cho 158 dòng ≈ 0.64 s / 100 dòng (gồm checkpoint sau mỗi lần xóa) | Intel64 Fam 6 Model 165, Win 11, Python 3.13.5 |
 
+Cùng chuỗi lệnh chính thức (`src.evaluate` + `src.compare`), chỉ thay `--gt` bằng dev gold, sinh ra `reports/metrics_baseline_devgold.json`, `reports/metrics_poc_devgold.json` và `reports/table1_baseline_vs_poc_devgold.md` (JSON ghi rõ `gt=reports/gold/t08_dev_gt_actions.csv`). Audit trace completeness: baseline 2/2, PoC 33/33. Hậu tố `_devgold` để không lẫn với file chính thức giảng viên sinh.
+
 > PoC = 1.000 trên dev gold **không** phải bằng chứng mạnh: gold và policy cùng suy ra từ một spec (xem §09). Rủi ro thật ở phạm vi legal hold, đo trong §06.
 
 ## 05 · Evaluation protocol
@@ -109,6 +111,7 @@
 - **Failure case 2 (PoC, rủi ro còn lại):** phạm vi legal hold không được spec định nghĩa rõ. Với DR-002, PoC giữ a0043 + backup a0044 nhưng **xóa** 12 frame/crop/embedding/annotation dẫn xuất từ raw đang hold. Nếu legal hold LH-2026-03 thực chất bao cả dữ liệu dẫn xuất thì PoC có **12 false-delete** (ablation 1, hàng copies / GT descendants). **Root cause:** policy ngầm định "bằng chứng = bản gốc + bản sao". **Cách giảm:** hold record nên khai báo scope (`self | copies | descendants`) để pipeline đọc thay vì đoán; trước khi có điều đó, hold scope là câu hỏi bắt buộc cho legal.
 - **Failure case 3 (PoC, giới hạn nghiệp vụ):** 24 dòng nhiều subject (vd frame a0011 chứa subj_00 + subj_01 trong DR-001) được escalate. Vì vậy dữ liệu của người yêu cầu **vẫn còn** cho tới khi redact/re-export xong. Metric tính đúng (escalate), nhưng quyền xóa chỉ được thực hiện trọn khi ticket redact đóng trước deadline (2026-12-01 với DR-001).
 - **Failure case 4 (lỗi thật gặp khi chạy, đã sửa):** trên Windows, `os.replace` khi checkpoint `mock_store.json` bị `PermissionError` (file trong `out/poc` bị antivirus / IDE file watcher khóa tạm thời), nên job xóa dừng giữa chừng. Vì store được checkpoint sau mỗi lần xóa, trạng thái không hỏng: lần chạy lại hoàn tất, `deletion_evidence.csv` = 16 `already_deleted` + 110 `deleted`, mỗi artefact xóa đúng 1 lần. **Root cause:** ghi đè file trên Windows không atomic khi có tiến trình khác giữ handle. **Sửa:** retry có backoff khi `replace`; test `test_interrupted_mock_delete_resumes_without_double_delete` mô phỏng crash sau 40 lần xóa.
+- **Failure case 5 (bug thật, tìm được bằng test, đã sửa phía nhóm):** chạy evaluator chính thức `eval_t08` trên Windows báo `UnicodeDecodeError: 'charmap' codec can't decode byte 0x9d`. **Root cause:** `eval_t08` đọc `audit_log.jsonl` bằng `read_text()` không chỉ định encoding (cp1252 trên Windows), trong khi `AuditLog` ghi UTF-8 (`ensure_ascii=False`) kèm review note tiếng Việt. Nếu chấm trên máy Windows, PoC crash ngay ở bước chấm. **Sửa** (không đụng định nghĩa metric): `AuditLog` ghi JSON dạng ASCII (escape unicode), nội dung không đổi khi đọc lại. Test hồi quy: `test_audit_log_is_ascii_so_official_evaluator_reads_it_on_any_locale`. Đề xuất cho giảng viên: dùng `read_text(encoding='utf-8')` trong `eval_t08`.
 - **Latency:** 1.00 s / 158 dòng trên CPU laptop (Intel64 Fam 6 Model 165, Windows 11, Python 3.13.5). Phần lớn thời gian là 126 lần checkpoint store, đổi tốc độ lấy khả năng resume.
 
 ## 07 · Human & decision
@@ -136,7 +139,7 @@ python -m pytest -q
 python -m src.evaluate --track t08 --pred out/poc/actions.csv --run-name poc --out reports/metrics_poc.json
 ```
 
-- `pytest`: **59 passed, 39 skipped** (skip = test cần GT giảng viên); riêng `tests/test_t08.py`: **12 passed**: resume sau crash, SLA/notification, E2E + idempotency (chạy 2 lần cùng `actions.csv`, lần 2 toàn `already_deleted`), PoC > baseline, legal hold + backup, guard override, identity/ACL/origin/multi-subject, artefact mất tag, graph hỏng (trùng id, parent treo), review file cũ (exit 2), toggle ablation.
+- `pytest`: **60 passed, 39 skipped** (skip = test cần GT giảng viên); riêng `tests/test_t08.py`: **13 passed**: audit log ASCII (hồi quy bug encoding), resume sau crash, SLA/notification, E2E + idempotency (chạy 2 lần cùng `actions.csv`, lần 2 toàn `already_deleted`), PoC > baseline, legal hold + backup, guard override, identity/ACL/origin/multi-subject, artefact mất tag, graph hỏng (trùng id, parent treo), review file cũ (exit 2), toggle ablation.
 - Lệnh contract `python -m src.main --input fixtures/t08_deletion --config configs/lab.yaml --output out/contract --offline --seed 42` → exit 0.
 - Máy: Windows 11 (10.0.26300), Intel64 Family 6 Model 165, Python 3.13.5 · git sha: xem tag `demo-180m`.
 
