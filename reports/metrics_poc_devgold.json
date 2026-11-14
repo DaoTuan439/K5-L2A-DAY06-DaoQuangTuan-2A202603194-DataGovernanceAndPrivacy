@@ -1,8 +1,8 @@
 {
   "run_name": "poc",
   "track": "t08",
-  "created_at": "2026-11-14T08:54:30+00:00",
-  "git_sha": "ab2a85d",
+  "created_at": "2026-11-14T09:15:22+00:00",
+  "git_sha": "ba43778",
   "seed": 42,
   "n_items": 158,
   "runtime_seconds": 1.0311,
@@ -19,9 +19,9 @@
       "value": 1.0,
       "direction": "higher",
       "unit": "must-delete artefacts deleted / must-delete artefacts",
-      "numerator": 23,
-      "denominator": 23,
-      "n": 33,
+      "numerator": 36,
+      "denominator": 36,
+      "n": 48,
       "slice": "all",
       "primary": true,
       "notes": "",
@@ -45,8 +45,8 @@
       "value": 1.0,
       "direction": "higher",
       "unit": "legal-hold/escalate rows handled as expected / such rows",
-      "numerator": 10,
-      "denominator": 10,
+      "numerator": 12,
+      "denominator": 12,
       "n": null,
       "slice": "all",
       "primary": false,
@@ -58,8 +58,8 @@
       "value": 1.0,
       "direction": "higher",
       "unit": "actions with an audit entry / actions",
-      "numerator": 33,
-      "denominator": 33,
+      "numerator": 48,
+      "denominator": 48,
       "n": null,
       "slice": "all",
       "primary": false,
@@ -75,12 +75,12 @@
       {
         "slice": "delete",
         "accuracy": 1.0,
-        "n": 23
+        "n": 36
       },
       {
         "slice": "escalate",
         "accuracy": 1.0,
-        "n": 8
+        "n": 10
       },
       {
         "slice": "retain_legal_hold",

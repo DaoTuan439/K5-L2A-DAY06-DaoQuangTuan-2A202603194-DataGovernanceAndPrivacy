@@ -4,8 +4,8 @@
 > `out/*/run_info.json`, `out/poc/decision.json`. Repo học viên không có `gt/`: `python -m src.evaluate --track t08 ...`
 > không có `--gt` thì exit 2 "ground truth file not found" (đã kiểm). Vì vậy `reports/metrics_baseline.json`,
 > `reports/metrics_poc.json`, `reports/table1_baseline_vs_poc.md` hiện được sinh bằng **đúng các lệnh của đề** với
-> `--gt reports/gold/t08_dev_gt_actions.csv` (**dev gold tự gán nhãn**, N=33; trường `extra.gt` trong JSON ghi rõ),
-> pred giới hạn ở DR-002/DR-004. **Không phải điểm chính thức.** Giảng viên chạy lại với GT thật sẽ ghi đè 3 file này.
+> `--gt reports/gold/t08_dev_gt_actions.csv` (**dev gold tự gán nhãn**, N=48; trường `extra.gt` trong JSON ghi rõ),
+> pred giới hạn ở DR-002/DR-004/DR-008. **Không phải điểm chính thức.** Giảng viên chạy lại với GT thật sẽ ghi đè 3 file này.
 
 ## 00 · Header
 
@@ -32,7 +32,7 @@
 | Split | N | Nguồn / link | License | Synthetic? |
 |---|---|---|---|---|
 | dev (fixture) | 10 request × 212 artefact → 158 cặp trong phạm vi | `fixtures/t08_deletion/` (synthetic: tools/make_fixtures.py seed 42) | CC0-1.0 | Có, mock, không xóa dữ liệu thật |
-| dev gold (tự gán nhãn) | 33 cặp (DR-002, DR-004) | `reports/gold/t08_dev_gold.csv` + protocol `reports/gold/README.md` | CC0-1.0 | Có |
+| dev gold (tự gán nhãn) | 48 cặp (DR-002, DR-004, DR-008) | `reports/gold/t08_dev_gold.csv` + protocol `reports/gold/README.md` | CC0-1.0 | Có |
 | eval / heldout | ẩn | hidden eval của giảng viên (seed bí mật), cùng cấu trúc | — | Có |
 
 - **Schema:** artefact `{artefact_id, type, subject_ids, parent_ids, uri, owner, acl, legal_hold, origin_known, created_at, filename?}`; request `{request_id, subject_id, received_at, deadline, channel, identity_verified}`.
@@ -65,17 +65,17 @@
 - **PoC** (`src/pipeline.py` + `src/t08_lineage.py`, config `configs/lab.yaml`: `hold_scope=copies`, `operator_role=data-platform`, `dry_run=false`).
 - Cùng input, cùng seed 42, cùng evaluator, cùng gold: **xác nhận**.
 
-**Bảng 1 · Baseline vs PoC** — `python -m tools.t08_selfcheck --pred out/baseline/actions.csv out/poc/actions.csv` (dev gold N=33, Wilson 95% CI):
+**Bảng 1 · Baseline vs PoC** — `python -m tools.t08_selfcheck --pred out/baseline/actions.csv out/poc/actions.csv` (dev gold N=48, Wilson 95% CI):
 
 | Metric (unit) | Baseline | PoC | Δ & chú thích |
 |---|---|---|---|
-| **Primary: Deletion Completeness** (higher) | 1/23 = 0.043 [0.008, 0.210] | 23/23 = 1.000 [0.857, 1.000] | +0.957. Baseline chỉ xóa đúng 1 raw. |
+| **Primary: Deletion Completeness** (higher) | 2/36 = 0.056 [0.015, 0.181] | 36/36 = 1.000 [0.904, 1.000] | +0.944. Baseline chỉ xóa đúng 2 raw. |
 | False-delete count (lower, mục tiêu 0) | **1** (xóa raw a0043 đang legal hold) | **0** | −1 |
-| Hard-slice: Exception handling accuracy | 0/10 = 0.000 [0.000, 0.278] | 10/10 = 1.000 [0.722, 1.000] | N=10 dòng hold/escalate |
+| Hard-slice: Exception handling accuracy | 0/12 = 0.000 [0.000, 0.242] | 12/12 = 1.000 [0.758, 1.000] | N=12 dòng hold/escalate |
 | Review queue | 0 dòng (không review) | 32 dòng exception, 32/32 đã duyệt | B = toàn bộ exception |
 | Runtime (CPU, `run_info.json`) | 0.0335 s cho 10 dòng | 1.0042 s cho 158 dòng ≈ 0.64 s / 100 dòng (gồm checkpoint sau mỗi lần xóa) | Intel64 Fam 6 Model 165, Win 11, Python 3.13.5 |
 
-Cùng chuỗi lệnh chính thức (`src.evaluate` + `src.compare`), chỉ thay `--gt` bằng dev gold, sinh ra `reports/metrics_baseline_devgold.json`, `reports/metrics_poc_devgold.json` và `reports/table1_baseline_vs_poc_devgold.md` (JSON ghi rõ `gt=reports/gold/t08_dev_gt_actions.csv`). Audit trace completeness: baseline 2/2, PoC 33/33. Hậu tố `_devgold` để không lẫn với file chính thức giảng viên sinh.
+Cùng chuỗi lệnh chính thức (`src.evaluate` + `src.compare`), chỉ thay `--gt` bằng dev gold, sinh ra `reports/metrics_baseline_devgold.json`, `reports/metrics_poc_devgold.json` và `reports/table1_baseline_vs_poc_devgold.md` (JSON ghi rõ `gt=reports/gold/t08_dev_gt_actions.csv`). Audit trace completeness: baseline 3/3, PoC 48/48. Hậu tố `_devgold` để không lẫn với file chính thức giảng viên sinh.
 
 > PoC = 1.000 trên dev gold **không** phải bằng chứng mạnh: gold và policy cùng suy ra từ một spec (xem §09). Rủi ro thật ở phạm vi legal hold, đo trong §06.
 
@@ -92,21 +92,21 @@ Cùng chuỗi lệnh chính thức (`src.evaluate` + `src.compare`), chỉ thay 
 
 | Slice | N | Baseline | PoC | Ghi chú |
 |---|---|---|---|---|
-| raw_video | 2 | 1/2 | 2/2 | baseline xóa raw đang hold |
-| backup | 2 | 0/2 | 2/2 | baseline không tìm backup |
-| embedding (định danh) | 6 | 0/6 | 6/6 | gồm 3 origin unknown → escalate |
-| frame + face_crop + annotation | 20 | 0/20 | 20/20 | gồm 2 dòng nhiều subject |
-| training_export | 3 | 0/3 | 3/3 | nhiều subject → escalate |
+| raw_video | 3 | 2/3 | 3/3 | baseline xóa raw đang hold (a0043) |
+| backup | 3 | 0/3 | 3/3 | baseline không tìm backup; gồm a0156 ACL vendor-x → escalate |
+| embedding (định danh) | 9 | 0/9 | 9/9 | gồm 3 origin unknown → escalate |
+| frame + face_crop + annotation | 29 | 0/29 | 29/29 | gồm 2 dòng nhiều subject |
+| training_export | 4 | 0/4 | 4/4 | nhiều subject → escalate |
 
 **Ablation 1 · hold_scope × cách hiểu legal hold của GT** (`python -m tools.t08_ablation`):
 
 | PoC hold_scope | GT = self | GT = copies | GT = descendants | Worst false-delete |
 |---|---|---|---|---|
 | self | compl 1.000 · FD 0 | compl 1.000 · FD 1 | compl 1.000 · FD 13 | 13 |
-| **copies (chốt)** | compl 0.958 · FD 0 | compl 1.000 · FD 0 | compl 1.000 · FD 12 | 12 |
-| descendants | compl 0.458 · FD 0 | compl 0.478 · FD 0 | compl 1.000 · FD 0 | 0 |
+| **copies (chốt)** | compl 0.973 · FD 0 | compl 1.000 · FD 0 | compl 1.000 · FD 12 | 12 |
+| descendants | compl 0.649 · FD 0 | compl 0.667 · FD 0 | compl 1.000 · FD 0 | 0 |
 
-**Ablation 2 · bỏ từng luật** (GT = copies): bỏ `multi_subject` → FD 5, exception acc 0.5; bỏ `origin` → FD 3; bỏ `legal_hold` → FD 2; bỏ tất cả → FD 10, exception acc 0.0. Bỏ `identity` / `acl` / `lineage` **không đổi gì trên dev gold**: fixture không có request chưa xác minh, backup vendor-x (DR-008) không nằm trong gold, không có artefact mất tag. Ba luật này chỉ được kiểm bằng unit test (`tests/test_t08.py`).
+**Ablation 2 · bỏ từng luật** (GT = copies): bỏ `multi_subject` → FD 6, exception acc 0.5; bỏ `origin` → FD 3; bỏ `legal_hold` → FD 2; bỏ `acl` → FD 1 (xóa backup a0156 của vendor-x); bỏ tất cả → FD 12, exception acc 0.0. Bỏ `identity` / `lineage` **không đổi gì trên dev gold**: fixture không có request chưa xác minh, không có artefact mất tag. Hai luật này chỉ được kiểm bằng unit test (`tests/test_t08.py`).
 
 - **Failure case 1 (baseline, failure mode bắt buộc "xóa nhầm exception; chỉ xóa raw nhưng giữ bản sao và embedding định danh"):** DR-002 / subj_03. Baseline `delete` a0043 (`raw_video`, `legal_hold: LH-2026-03`), làm mất bằng chứng đang bị giữ. Đồng thời baseline bỏ qua backup a0044 và 3 embedding định danh a0047/a0051/a0055, nên dữ liệu khuôn mặt của subj_03 vẫn tồn tại sau khi "xóa xong". **Root cause:** xóa theo filename, không duyệt lineage, không kiểm `legal_hold` trước khi xóa.
 - **Failure case 2 (PoC, rủi ro còn lại):** phạm vi legal hold không được spec định nghĩa rõ. Với DR-002, PoC giữ a0043 + backup a0044 nhưng **xóa** 12 frame/crop/embedding/annotation dẫn xuất từ raw đang hold. Nếu legal hold LH-2026-03 thực chất bao cả dữ liệu dẫn xuất thì PoC có **12 false-delete** (ablation 1, hàng copies / GT descendants). **Root cause:** policy ngầm định "bằng chứng = bản gốc + bản sao". **Cách giảm:** hold record nên khai báo scope (`self | copies | descendants`) để pipeline đọc thay vì đoán; trước khi có điều đó, hold scope là câu hỏi bắt buộc cho legal.
@@ -166,7 +166,7 @@ python -m src.evaluate --track t08 --pred out/poc/actions.csv --run-name poc --o
 
 ## 09 · Limitations & ethics
 
-- **Dev gold không độc lập với policy:** nhãn được soạn từ cùng spec `T08.md` (có hỗ trợ của trợ lý AI, labeller daoquangtuan duyệt), 1 labeller, N=33. Kết quả 1.000 chỉ chứng minh code cài đúng cách hiểu spec. Điểm thật phụ thuộc hidden eval.
+- **Dev gold không độc lập với policy:** nhãn được soạn từ cùng spec `T08.md` (có hỗ trợ của trợ lý AI, labeller daoquangtuan duyệt), 1 labeller, N=48 (DR-008 thêm sau, cũng soạn theo spec nên không tăng tính độc lập, chỉ phủ thêm luật ACL). Kết quả 1.000 chỉ chứng minh code cài đúng cách hiểu spec. Điểm thật phụ thuộc hidden eval.
 - **Rủi ro pháp lý:** phạm vi legal hold (§06 failure 2) và cách xử lý artefact nhiều subject cần DPO/legal xác nhận. Đây là tình huống học tập, **không** tuyên bố "đạt GDPR Art.17 / Luật 91/2025 / NĐ 356/2025".
 - **Chưa làm:** gửi notification thật (mới là outbox mock); lịch xóa tự động khi hold hết hạn; theo dõi việc đóng ticket redact/re-export; xóa thật trên storage (mock).
 - **Scale 10×** (~2 000 artefact, 100 request): BFS O(V+E) mỗi request, vẫn dưới giây. Hàng chờ review tăng tuyến tính (~320 dòng), nên cần gom theo artefact (training_export a0211 xuất hiện trong 8 request nên duyệt 1 lần).

@@ -1,26 +1,26 @@
 # T08 self-check vs dev gold (`reports\gold\t08_dev_gold.csv`)
 
-Gold: 33 (request, artefact) rows, requests ['DR-002', 'DR-004'], labeller ['daoquangtuan']. Official evaluator `eval_t08`, Wilson 95% CI. **Not** the official score.
+Gold: 48 (request, artefact) rows, requests ['DR-002', 'DR-004', 'DR-008'], labeller ['daoquangtuan']. Official evaluator `eval_t08`, Wilson 95% CI. **Not** the official score.
 
 ## out/baseline/actions.csv
 
 | metric | value | k | n | wilson95_lo | wilson95_hi |
 |---|---|---|---|---|---|
-| Deletion Completeness | 0.043478260869565216 | 1.0 | 23.0 | 0.008 | 0.21 |
+| Deletion Completeness | 0.05555555555555555 | 2.0 | 36.0 | 0.015 | 0.181 |
 | False-delete count | 1.0 |  |  |  |  |
-| Exception handling accuracy | 0.0 | 0.0 | 10.0 | 0.0 | 0.278 |
+| Exception handling accuracy | 0.0 | 0.0 | 12.0 | 0.0 | 0.242 |
 
 Per artefact type:
 
 | type | correct | n |
 |---|---|---|
-| annotation | 0 | 7 |
-| backup | 0 | 2 |
-| embedding | 0 | 6 |
-| face_crop | 0 | 6 |
-| frame | 0 | 7 |
-| raw_video | 1 | 2 |
-| training_export | 0 | 3 |
+| annotation | 0 | 10 |
+| backup | 0 | 3 |
+| embedding | 0 | 9 |
+| face_crop | 0 | 9 |
+| frame | 0 | 10 |
+| raw_video | 2 | 3 |
+| training_export | 0 | 4 |
 
 Disagreements with gold:
 
@@ -58,25 +58,39 @@ Disagreements with gold:
 | DR-004 | a0084 | annotation | G | delete | (missing) | high |
 | DR-004 | a0211 | training_export | D | escalate | (missing) | high |
 | DR-004 | a0212 | training_export | D | escalate | (missing) | high |
+| DR-008 | a0156 | backup | H | escalate | (missing) | high |
+| DR-008 | a0157 | frame | G | delete | (missing) | high |
+| DR-008 | a0158 | face_crop | G | delete | (missing) | high |
+| DR-008 | a0159 | embedding | G | delete | (missing) | high |
+| DR-008 | a0160 | annotation | G | delete | (missing) | high |
+| DR-008 | a0161 | frame | G | delete | (missing) | high |
+| DR-008 | a0162 | face_crop | G | delete | (missing) | high |
+| DR-008 | a0163 | embedding | G | delete | (missing) | high |
+| DR-008 | a0164 | annotation | G | delete | (missing) | high |
+| DR-008 | a0165 | frame | G | delete | (missing) | high |
+| DR-008 | a0166 | face_crop | G | delete | (missing) | high |
+| DR-008 | a0167 | embedding | G | delete | (missing) | high |
+| DR-008 | a0168 | annotation | G | delete | (missing) | high |
+| DR-008 | a0211 | training_export | D | escalate | (missing) | high |
 
 ## out/poc/actions.csv
 
 | metric | value | k | n | wilson95_lo | wilson95_hi |
 |---|---|---|---|---|---|
-| Deletion Completeness | 1.0 | 23.0 | 23.0 | 0.857 | 1.0 |
+| Deletion Completeness | 1.0 | 36.0 | 36.0 | 0.904 | 1.0 |
 | False-delete count | 0.0 |  |  |  |  |
-| Exception handling accuracy | 1.0 | 10.0 | 10.0 | 0.722 | 1.0 |
+| Exception handling accuracy | 1.0 | 12.0 | 12.0 | 0.758 | 1.0 |
 
 Per artefact type:
 
 | type | correct | n |
 |---|---|---|
-| annotation | 7 | 7 |
-| backup | 2 | 2 |
-| embedding | 6 | 6 |
-| face_crop | 6 | 6 |
-| frame | 7 | 7 |
-| raw_video | 2 | 2 |
-| training_export | 3 | 3 |
+| annotation | 10 | 10 |
+| backup | 3 | 3 |
+| embedding | 9 | 9 |
+| face_crop | 9 | 9 |
+| frame | 10 | 10 |
+| raw_video | 3 | 3 |
+| training_export | 4 | 4 |
 
 No disagreement with gold.
