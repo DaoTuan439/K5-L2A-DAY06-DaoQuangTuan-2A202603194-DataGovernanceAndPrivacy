@@ -155,7 +155,9 @@ class AuditLog:
             extra=extra,
         )
         with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(asdict(ev), ensure_ascii=False, default=str) + "\n")
+            # ASCII escapes (\uXXXX): readers that open the log without an explicit encoding
+            # (e.g. eval_t08's read_text() on a cp1252 Windows locale) must not crash on Vietnamese notes.
+            f.write(json.dumps(asdict(ev), ensure_ascii=True, default=str) + "\n")
         return ev
 
     def read(self) -> list[dict]:

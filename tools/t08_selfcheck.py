@@ -47,6 +47,20 @@ def check(pred_path: Path, gold_path: Path = GOLD) -> tuple[pd.DataFrame, pd.Dat
     return pd.DataFrame(rows), by_type, errors
 
 
+def export_dev_gt(preds: list[str], gold_path: Path = GOLD, gt_out: Path = Path("reports/gold/t08_dev_gt_actions.csv")) -> list[Path]:
+    """Write the dev gold in the official GT format + each pred restricted to the labelled requests,
+    so the unchanged `python -m src.evaluate --gt ...` / `src.compare` commands can run on it."""
+    gold = pd.read_csv(gold_path, dtype=str).fillna("")
+    gold.rename(columns={"gold_action": "expected_action"})[["request_id", "artefact_id", "expected_action"]].to_csv(gt_out, index=False)
+    outs = []
+    for p in map(Path, preds):
+        pred = pd.read_csv(p, dtype=str)
+        o = p.with_name(p.stem + "_devgold.csv")
+        pred[pred.request_id.isin(set(gold.request_id))].to_csv(o, index=False)
+        outs.append(o)
+    return outs
+
+
 def _md(df: pd.DataFrame) -> str:
     """Markdown table without the optional `tabulate` dependency (not in requirements.txt)."""
     cells = df.astype(object).where(df.notna(), "").astype(str)
@@ -60,7 +74,12 @@ def main(argv=None) -> int:
     ap.add_argument("--pred", nargs="+", required=True)
     ap.add_argument("--gold", default=str(GOLD))
     ap.add_argument("--out", default=None, help="write a markdown report")
+    ap.add_argument("--export-dev-gt", action="store_true",
+                    help="also write reports/gold/t08_dev_gt_actions.csv + <pred>_devgold.csv for src.evaluate --gt")
     a = ap.parse_args(argv)
+    if a.export_dev_gt:
+        for o in export_dev_gt(a.pred, Path(a.gold)):
+            print(f"[dev-gt] wrote {o}")
     gold = pd.read_csv(a.gold, dtype=str)
     md = [f"# T08 self-check vs dev gold (`{a.gold}`)", "",
           f"Gold: {len(gold)} (request, artefact) rows, requests {sorted(gold.request_id.unique())}, labeller "

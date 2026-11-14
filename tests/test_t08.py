@@ -181,3 +181,13 @@ def test_sla_status_and_notification_stub(tmp_path):
     msgs = notify(ctx, final, sla.reset_index())
     assert set(msgs.to) == {"subject:s1", "subject:s2", "subject:s3", "redaction-team", "acl-owner", "data-owner", "legal"}
     assert all("http" not in json.dumps(m) for m in msgs.to_dict("records"))   # stub: nothing is sent
+
+
+def test_audit_log_is_ascii_so_official_evaluator_reads_it_on_any_locale(tmp_path):
+    # Regression: eval_t08 reads audit_log.jsonl with read_text() (locale encoding, cp1252 on Windows);
+    # UTF-8 Vietnamese review notes crashed it with UnicodeDecodeError.
+    assert _run(tmp_path) == 0
+    raw = (tmp_path / "audit_log.jsonl").read_bytes()
+    assert raw.isascii()
+    notes = [json.loads(l)["reason"] for l in raw.decode("ascii").splitlines() if '"review:approve"' in l]
+    assert any("legal hold" in n or "Giữ" in n for n in notes)   # Vietnamese survives as \u escapes
