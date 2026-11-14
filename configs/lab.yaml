@@ -17,3 +17,4 @@ params:
   dry_run: false                  # false = run the mock deletion + write deletion_evidence.csv
   hold_scope: copies              # legal hold covers the artefact + its exact copies (backup); see metric_contract.md
   operator_role: data-platform    # role executing deletions; artefacts whose ACL lacks it -> escalate
+  review_file: reports/review_queue_reviewed.csv   # human decisions (used when out/<run>/review_queue_reviewed.csv is absent)

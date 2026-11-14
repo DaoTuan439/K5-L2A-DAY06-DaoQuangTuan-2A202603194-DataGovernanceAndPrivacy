@@ -24,9 +24,11 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 import pandas as pd
 
+from .common.contact_sheet import render_contact_sheet
 from .common.context import RunContext
 from .common.decision import Decision, write_decision
 from .common.manifest import verify_manifest
@@ -81,6 +83,7 @@ def rank(ctx: RunContext, scored: pd.DataFrame) -> pd.DataFrame:
     q = make_review_queue(exc, id_col="item_id", score_col="score", budget=budget,
                           reason_col="reason", action_col="action", slice_col="slice")
     write_review_queue(q, ctx.out("review_queue.csv"))
+    render_contact_sheet(q, ctx.out("contact_sheet.html"), image_col=None, title="T08 delete-request exceptions (G08)")
     ctx.stats["n_review_queue"] = len(q)
     return q
 
@@ -98,10 +101,13 @@ def review(ctx: RunContext, scored: pd.DataFrame, queue: pd.DataFrame) -> pd.Dat
     final["reviewed_by"] = ""
     final["review_decision"] = ""
     reviewed_path = ctx.output_dir / "review_queue_reviewed.csv"
+    if not reviewed_path.exists() and ctx.param("review_file"):   # committed review -> clean-start reproducible
+        reviewed_path = Path(ctx.param("review_file"))
     if not reviewed_path.exists():
         return final
     reviewed = load_review_decisions(reviewed_path)
     ctx.stats["n_reviewed"] = len(reviewed)
+    ctx.stats["review_file"] = str(reviewed_path)
     idx = final.set_index("item_id").index
     for r in reviewed.itertuples(index=False):
         if r.item_id not in idx:
